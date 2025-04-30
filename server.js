@@ -2,8 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const path = require('path');
 const app = express();
-
-mongoose.connect('mongodb://127.0.0.1:27017/kitchen', ).then(() => console.log('✅ MongoDB connected'))
+mongoose.connect('mongodb+srv://user1:malafiki@leodb.5mf7q.mongodb.net/?retryWrites=true&w=majority&appName=leodb', ).then(() => console.log('✅ MongoDB connected'))
   .catch(err => console.log('❌ DB connection error:', err));
 
 const espSchema = new mongoose.Schema({
