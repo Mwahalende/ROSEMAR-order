@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Kitchen Dashboard</title>
+  <style>
+    body { font-family: sans-serif; background: #eef2f5; padding: 20px; }
+    h2 { text-align: center; }
+    .buzzer-control {
+      background: white;
+      padding: 20px;
+      margin: 20px auto;
+      border-radius: 10px;
+      max-width: 400px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #connectBtn { background-color: #007BFF; color: white; }
+    .onBtn { background-color: #28a745; color: white; }
+    .offBtn { background-color: #dc3545; color: white; }
+    .status { margin-top: 10px; font-weight: bold; }
+    input, select {
+      padding: 10px;
+      width: 90%;
+      margin: 10px 0;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Kitchen Buzzer Control</h2>
+  <div class="buzzer-control">
+    <input id="deviceName" placeholder="Enter ESP32 Name (e.g., ESP32-BUZZ01)">
+    <select id="foodName">
+      <option value="">Select Food</option>
+      <option value="piza">Piza</option>
+      <option value="baga">Baga</option>
+      <option value="nyama roast">Nyama Roast</option>
+      <option value="chips kavu">Chips Kavu</option>
+      <option value="chip yai">Chip Yai</option>
+      <option value="chips kuku">Chips Kuku</option>
+      <option value="ndizi nyama">Ndizi Nyama</option>
+    </select>
+    <input id="price" type="number" placeholder="Enter Price">
+    
+    <button id="connectBtn" onclick="connectBluetooth()">Connect</button>
+    <button id="submitBtn" onclick="submitData()" disabled>Submit to Server</button>
+    <button class="onBtn" onclick="activateBuzzer()">Activate Buzzer</button>
+
+    <div class="status" id="status">Status: Not Connected</div>
+  </div>
+
+  <script>
+    let bleServer;
+    let bleCharacteristic;
+    let connectedDeviceName = "";
+
+    async function connectBluetooth() {
+      const deviceName = document.getElementById("deviceName").value.trim();
+      if (!deviceName) {
+        alert("Please enter the ESP32 Bluetooth name.");
+        return;
+      }
+
+      try {
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: deviceName }],
+          optionalServices: ['4fafc201-1fb5-459e-8fcc-c5c9c331914b']
+        });
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService('4fafc201-1fb5-459e-8fcc-c5c9c331914b');
+        bleCharacteristic = await service.getCharacteristic('beb5483e-36e1-4688-b7f5-ea07361b26a8');
+
+        bleServer = server;
+        connectedDeviceName = deviceName;
+        document.getElementById("status").textContent = "✅ Connected to " + deviceName;
+        document.getElementById("submitBtn").disabled = false;
+      } catch (error) {
+        document.getElementById("status").textContent = "❌ Connection failed. Make sure ESP32 is advertising.";
+        alert("Bluetooth connection failed: " + error);
+      }
+    }
+
+    async function activateBuzzer() {
+      if (!bleCharacteristic) {
+        alert("❌ Not connected to any device.");
+        return;
+      }
+
+      try {
+        await bleCharacteristic.writeValue(Uint8Array.of(0));
+        document.getElementById("status").textContent = "✅ Buzzer Activated";
+
+        setTimeout(async () => {
+          if (bleCharacteristic) {
+            await bleCharacteristic.writeValue(Uint8Array.of(1));
+            document.getElementById("status").textContent = "🔕 Buzzer Deactivated (after 1 min)";
+          }
+        }, 60000);
+      } catch (err) {
+        alert("Error activating buzzer: " + err);
+      }
+    }
+
+    async function submitData() {
+      const foodName = document.getElementById("foodName").value;
+      const price = document.getElementById("price").value;
+
+      if (!connectedDeviceName || !foodName || !price) {
+        alert("Please complete all fields.");
+        return;
+      }
+
+      const data = {
+        espName: connectedDeviceName,
+        foodName,
+        price
+      };
+
+      try {
+        const res = await fetch('/register-food', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        if (res.ok) {
+          alert("✅ Food registered successfully!");
+          document.getElementById("foodName").value = "";
+          document.getElementById("price").value = "";
+        } else {
+          alert("❌ Server error. Try again.");
+        }
+      } catch (err) {
+        alert("❌ Failed to submit data: " + err);
+      }
+    }
+  </script>
+</body>
+</html>

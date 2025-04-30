@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Kitchen Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #eef2f5;
+      padding: 20px;
+    }
+
+    h2 {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    table {
+      width: 90%;
+      margin: auto;
+      border-collapse: collapse;
+      background-color: #fff;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 15px;
+      text-align: center;
+      border-bottom: 1px solid #ccc;
+    }
+
+    th {
+      background-color: #007BFF;
+      color: white;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .btn {
+      padding: 8px 15px;
+      border: none;
+      border-radius: 5px;
+      font-size: 14px;
+      cursor: pointer;
+      margin: 2px;
+    }
+
+    .connect { background-color: #007BFF; color: white; }
+    .activate { background-color: #28a745; color: white; }
+    .disconnect { background-color: #dc3545; color: white; }
+    .status { font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <h2>Kitchen Devices Dashboard</h2>
+  <table id="deviceTable">
+    <thead>
+      <tr>
+        <th>ESP32 Name</th>
+        <th>Food Name</th>
+        <th>Price (TSH)</th>
+        <th>Connect</th>
+        <th>Activate</th>
+        <th>Disconnect</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Devices will be inserted here -->
+    </tbody>
+  </table>
+
+  <script>
+    let deviceMap = {};
+
+    async function fetchDevices() {
+      const res = await fetch('/get-devices');
+      const devices = await res.json();
+      const tbody = document.querySelector("#deviceTable tbody");
+      tbody.innerHTML = "";
+
+      devices.forEach(device => {
+        const row = document.createElement("tr");
+
+        row.innerHTML = `
+          <td>${device.espName}</td>
+          <td>${device.foodName}</td>
+          <td>${device.price}</td>
+          <td><button class="btn connect" onclick="connect('${device.espName}', this)">Connect</button></td>
+          <td><button class="btn activate" onclick="activate(this)" disabled>Activate</button></td>
+          <td><button class="btn disconnect" onclick="disconnect('${device.espName}', this)" disabled>Disconnect</button></td>
+          <td class="status">Not Connected</td>
+        `;
+
+        tbody.appendChild(row);
+      });
+    }
+
+    async function connect(espName, button) {
+      const row = button.closest("tr");
+      const statusCell = row.querySelector(".status");
+      const activateBtn = row.querySelector(".activate");
+      const disconnectBtn = row.querySelector(".disconnect");
+
+      try {
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: espName }],
+          optionalServices: ['4fafc201-1fb5-459e-8fcc-c5c9c331914b']
+        });
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService('4fafc201-1fb5-459e-8fcc-c5c9c331914b');
+        const characteristic = await service.getCharacteristic('beb5483e-36e1-4688-b7f5-ea07361b26a8');
+
+        deviceMap[espName] = { device, server, characteristic };
+
+        statusCell.textContent = `✅ Connected`;
+        activateBtn.disabled = false;
+        disconnectBtn.disabled = false;
+      } catch (err) {
+        alert("❌ Connection error: " + err);
+      }
+    }
+
+    async function activate(button) {
+      const row = button.closest("tr");
+      const espName = row.children[0].textContent;
+      const statusCell = row.querySelector(".status");
+
+      const conn = deviceMap[espName];
+      if (!conn || !conn.characteristic) {
+        alert("❌ Not connected to this ESP32.");
+        return;
+      }
+
+      try {
+        await conn.characteristic.writeValue(Uint8Array.of(0)); // ON
+        statusCell.textContent = "✅ Buzzer Activated";
+
+        setTimeout(async () => {
+          await conn.characteristic.writeValue(Uint8Array.of(1)); // OFF
+          statusCell.textContent = "🔕 Buzzer Deactivated (after 1 min)";
+        }, 60000);
+      } catch (err) {
+        alert("❌ Activation failed: " + err);
+      }
+    }
+
+    async function disconnect(espName, button) {
+      const row = button.closest("tr");
+      const statusCell = row.querySelector(".status");
+      const activateBtn = row.querySelector(".activate");
+      const disconnectBtn = row.querySelector(".disconnect");
+
+      const conn = deviceMap[espName];
+      if (!conn || !conn.device.gatt.connected) {
+        alert("Already disconnected.");
+        return;
+      }
+
+      try {
+        await conn.device.gatt.disconnect();
+        statusCell.textContent = "🔌 Disconnected";
+        activateBtn.disabled = true;
+        disconnectBtn.disabled = true;
+        delete deviceMap[espName];
+      } catch (err) {
+        alert("❌ Error during disconnection: " + err);
+      }
+    }
+
+    fetchDevices();
+  </script>
+
+</body>
+</html>
